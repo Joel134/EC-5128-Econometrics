@@ -11,20 +11,13 @@
 ************************************************
 clear all
 
-* Set Stata's working folder to the folder containing this do-file before running it.
-* Keep babcock_ftse_raw.dta in that folder to reproduce the reported results.
-* If downloading for the first time, install getsymbols with: ssc install getsymbols
+* Set Stata's working folder to the folder where you want to save the raw data.
+* Download daily adjusted closing prices from Yahoo Finance, 1 Oct 2016 to 30 Sep 2026.
+getsymbols ^FTSE BAB.L, fd(1) fm(10) fy(2016)  ld(30) lm(9) ly(2026) freq(d) yahoo clear price(adjclose)
 
-* Load the saved Yahoo Finance data. Download and save the data if the file is missing.
-capture confirm file "babcock_ftse_raw.dta"
-if _rc == 0 {
-    use "babcock_ftse_raw.dta", clear
-}
-else {
-    getsymbols ^FTSE BAB.L, fd(1) fm(10) fy(2016)  ld(30) lm(9) ly(2026) freq(d) yahoo clear price(adjclose)
-    save babcock_ftse_raw, replace
-    export delimited using babcock_ftse_raw.csv, replace
-}
+* Save a copy of the raw data (Stata format and CSV)
+save babcock_ftse_raw, replace
+export delimited using babcock_ftse_raw.csv, replace
 
 * Missing data check: the FTSE 100 price is missing on 22 Dec 2020 (left as missing)
 list if missing(p_adjclose__FTSE )
@@ -232,8 +225,10 @@ estat ic
 
 * Figure 6.1: Babcock return ACF and PACF, training sample
 corrgram return_bab if train == 1 & !missing(return_bab), lags(20)
-ac return_bab if train == 1 & !missing(return_bab), lags(20)
-pac return_bab if train == 1 & !missing(return_bab), lags(20)
+ac return_bab if train == 1 & !missing(return_bab), lags(20) name(q6_acf, replace) ytitle("Autocorrelation") nodraw
+pac return_bab if train == 1 & !missing(return_bab), lags(20) name(q6_pacf, replace) ytitle("Partial autocorrelation") nodraw
+graph combine q6_acf q6_pacf, cols(2) xcommon ycommon xsize(10) ysize(4) ///
+    title("ACF and PACF of Babcock Daily Log Returns") name(q6_figure61, replace)
 
 * Constant mean (ARMA(0,0))
 arima return_bab if train == 1 & !missing(return_bab), arima(0,0,0)
@@ -253,8 +248,15 @@ estimates store q6_ar_l14
 predict q6_resid_ar14 if train == 1 & !missing(return_bab), residuals
 corrgram q6_resid_ar14, lags(20)
 
-* Table 6.1: compare AIC and BIC on the common training sample
-estimates stats q6_mean q6_ar1 q6_ar_l14
+* MA with lag 14 only
+arima return_bab if train == 1 & !missing(return_bab), ma(14)
+estimates store q6_ma_l14
+predict q6_resid_ma14 if train == 1 & !missing(return_bab), residuals
+corrgram q6_resid_ma14, lags(20)
+
+* Table 6.1: use the residual ACF at lag 14 and Q(20) p-values above.
+* Compare AIC and BIC on the common training sample.
+estimates stats q6_mean q6_ar1 q6_ar_l14 q6_ma_l14
 
 ************************************************
 * QUESTION 7: Can you forecast stock returns?
@@ -266,7 +268,11 @@ arima return_bab if train == 1 & !missing(return_bab), ar(14)
 
 * Predict on the full series so early test forecasts use the training history.
 predict forecast_ar14, xb
-tsline return_bab forecast_ar14 if test == 1
+
+* Figure 7.1: compare actual and forecast daily returns in the test sample.
+tsline return_bab forecast_ar14 if test == 1, title("Babcock Actual Returns and AR Forecasts") ///
+    xtitle("Trading day") ytitle("Daily log return") ///
+    legend(label(1 "Actual return") label(2 "Lag-14 AR forecast")) name(q7_figure71, replace)
 
 * --- Forecast errors and RMSE ---
 * Forecast error is actual return minus forecast. Evaluate on the test sample.
@@ -297,7 +303,8 @@ arima return_bab if train == 1 & !missing(return_bab), ar(14)
 predict q8_resid if train == 1 & !missing(return_bab), residuals
 
 * Figure 8.1: plot the residuals to look for volatility clustering.
-tsline q8_resid if train == 1
+tsline q8_resid if train == 1, title("Babcock Lag-14 AR Residuals") ///
+    xtitle("Trading day") ytitle("Daily log return residual") name(q8_figure81, replace)
 
 * Use the Class 6 intercept-only regression to test the ARIMA residuals.
 * Lag 1 checks the previous trading day. Lags 1 to 5 jointly cover one trading week.
