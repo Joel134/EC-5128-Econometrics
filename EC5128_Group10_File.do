@@ -2,7 +2,6 @@
 * EC5128 Group Practical Assignment
 * Group 10
 * Babcock International Group plc (BAB.L) and the FTSE 100 (^FTSE)
-* 17 Nov 2026
 *****
 
 clear all
